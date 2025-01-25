@@ -1,116 +1,233 @@
-import React, {useEffect, useState} from 'react'
-import {useParams, useHistory} from 'react-router-dom'
-import Loader from 'react-loader-spinner'
+import {Component} from 'react'
+import {Link} from 'react-router-dom'
 import Cookies from 'js-cookie'
+import Loader from 'react-loader-spinner'
 import {BsPlusSquare, BsDashSquare} from 'react-icons/bs'
+
+import CartContext from '../../context/CartContext'
+
+import Header from '../Header'
 import SimilarProductItem from '../SimilarProductItem'
+
 import './index.css'
 
-const ProductItemDetails = () => {
-  const {id} = useParams()
-  const history = useHistory()
-  const [productDetails, setProductDetails] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
-  const [quantity, setQuantity] = useState(1)
+const apiStatusConstants = {
+  initial: 'INITIAL',
+  success: 'SUCCESS',
+  failure: 'FAILURE',
+  inProgress: 'IN_PROGRESS',
+}
 
-  useEffect(() => {
-    const fetchProductDetails = async () => {
-      setLoading(true)
-      try {
-        const response = await fetch(`https://apis.ccbp.in/products/${id}`, {
-          method: 'GET',
-          headers: {
-            Authorization: `Bearer ${Cookies.get('jwt_token')}`,
-          },
-        })
-        if (!response.ok) {
-          throw new Error('Product not found')
-        }
-        const data = await response.json()
-        setProductDetails(data)
-      } catch (err) {
-        setError(true)
-      } finally {
-        setLoading(false)
-      }
+class ProductItemDetails extends Component {
+  state = {
+    productData: {},
+    similarProductsData: [],
+    apiStatus: apiStatusConstants.initial,
+    quantity: 1,
+  }
+
+  componentDidMount() {
+    this.getProductData()
+  }
+
+  getFormattedData = data => ({
+    availability: data.availability,
+    brand: data.brand,
+    description: data.description,
+    id: data.id,
+    imageUrl: data.image_url,
+    price: data.price,
+    rating: data.rating,
+    title: data.title,
+    totalReviews: data.total_reviews,
+  })
+
+  getProductData = async () => {
+    const {match} = this.props
+    const {params} = match
+    const {id} = params
+
+    this.setState({
+      apiStatus: apiStatusConstants.inProgress,
+    })
+    const jwtToken = Cookies.get('jwt_token')
+    const apiUrl = `https://apis.ccbp.in/products/${id}`
+    const options = {
+      headers: {
+        Authorization: `Bearer ${jwtToken}`,
+      },
+      method: 'GET',
     }
-
-    fetchProductDetails()
-  }, [id])
-
-  const handleContinueShopping = () => {
-    history.push('/products')
-  }
-
-  const incrementQuantity = () => {
-    setQuantity(prevQuantity => prevQuantity + 1)
-  }
-
-  const decrementQuantity = () => {
-    if (quantity > 1) {
-      setQuantity(prevQuantity => prevQuantity - 1)
+    const response = await fetch(apiUrl, options)
+    if (response.ok) {
+      const fetchedData = await response.json()
+      const updatedData = this.getFormattedData(fetchedData)
+      const updatedSimilarProductsData = fetchedData.similar_products.map(
+        eachSimilarProduct => this.getFormattedData(eachSimilarProduct),
+      )
+      this.setState({
+        productData: updatedData,
+        similarProductsData: updatedSimilarProductsData,
+        apiStatus: apiStatusConstants.success,
+      })
+    }
+    if (response.status === 404) {
+      this.setState({
+        apiStatus: apiStatusConstants.failure,
+      })
     }
   }
 
-  if (loading) {
-    return (
-      <div data-testid="loader">
-        <Loader type="ThreeDots" color="#0b69ff" height={80} width={80} />
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div>
-        <img
-          src="https://assets.ccbp.in/frontend/react-js/nxt-trendz-error-view-img.png"
-          alt="error view"
-        />
-        <button onClick={handleContinueShopping} type="button">
-          Continue Shopping
-        </button>
-      </div>
-    )
-  }
-
-  return (
-    <div className="product-details">
-      <img src={productDetails.image_url} alt="product" />
-
-      <h1>{productDetails.title}</h1>
-      <p>{productDetails.description}</p>
-      <p>{productDetails.rating}</p>
-
-      <p>{productDetails.availability}</p>
-      <p>{productDetails.brand}</p>
-      <p>Price: ₹{productDetails.price}</p>
-      <div className="quantity-controls">
-        <button data-testid="minus" onClick={decrementQuantity} type="button">
-          <BsDashSquare />
-        </button>
-        <span>{quantity}</span>
-        <button data-testid="plus" onClick={incrementQuantity} type="button">
-          <BsPlusSquare />
-        </button>
-      </div>
-      <button type="button">ADD TO CART</button>
-      <h2>Similar Products</h2>
-
-      <div className="similar-products">
-        {productDetails.similar_products.map(product => (
-          <SimilarProductItem key={product.id} product={product} />
-        ))}
-      </div>
+  renderLoadingView = () => (
+    <div className="products-details-loader-container" data-testid="loader">
+      <Loader type="ThreeDots" color="#0b69ff" height="50" width="50" />
     </div>
   )
+
+  renderFailureView = () => (
+    <div className="product-details-error-view-container">
+      <img
+        alt="error view"
+        src="https://assets.ccbp.in/frontend/react-js/nxt-trendz-error-view-img.png"
+        className="error-view-image"
+      />
+      <h1 className="product-not-found-heading">Product Not Found</h1>
+      <Link to="/products">
+        <button type="button" className="button">
+          Continue Shopping
+        </button>
+      </Link>
+    </div>
+  )
+
+  onDecrementQuantity = () => {
+    const {quantity} = this.state
+    if (quantity > 1) {
+      this.setState(prevState => ({quantity: prevState.quantity - 1}))
+    }
+  }
+
+  onIncrementQuantity = () => {
+    this.setState(prevState => ({quantity: prevState.quantity + 1}))
+  }
+
+  renderProductDetailsView = () => (
+    <CartContext.Consumer>
+      {value => {
+        const {productData, quantity, similarProductsData} = this.state
+        const {
+          availability,
+          brand,
+          description,
+          imageUrl,
+          price,
+          rating,
+          title,
+          totalReviews,
+        } = productData
+        const {addCartItem} = value
+        const onClickAddToCart = () => {
+          addCartItem({...productData, quantity})
+        }
+
+        return (
+          <div className="product-details-success-view">
+            <div className="product-details-container">
+              <img src={imageUrl} alt="product" className="product-image" />
+              <div className="product">
+                <h1 className="product-name">{title}</h1>
+                <p className="price-details">Rs {price}/-</p>
+                <div className="rating-and-reviews-count">
+                  <div className="rating-container">
+                    <p className="rating">{rating}</p>
+                    <img
+                      src="https://assets.ccbp.in/frontend/react-js/star-img.png"
+                      alt="star"
+                      className="star"
+                    />
+                  </div>
+                  <p className="reviews-count">{totalReviews} Reviews</p>
+                </div>
+                <p className="product-description">{description}</p>
+                <div className="label-value-container">
+                  <p className="label">Available:</p>
+                  <p className="value">{availability}</p>
+                </div>
+                <div className="label-value-container">
+                  <p className="label">Brand:</p>
+                  <p className="value">{brand}</p>
+                </div>
+                <hr className="horizontal-line" />
+                <div className="quantity-container">
+                  <button
+                    type="button"
+                    className="quantity-controller-button"
+                    aria-label="Mute volume"
+                    onClick={this.onDecrementQuantity}
+                    data-testid="minus"
+                  >
+                    <BsDashSquare className="quantity-controller-icon" />
+                  </button>
+                  <p className="quantity">{quantity}</p>
+                  <button
+                    type="button"
+                    className="quantity-controller-button"
+                    aria-label="Mute volume"
+                    onClick={this.onIncrementQuantity}
+                    data-testid="plus"
+                  >
+                    <BsPlusSquare className="quantity-controller-icon" />
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  className="button add-to-cart-btn"
+                  onClick={onClickAddToCart}
+                >
+                  ADD TO CART
+                </button>
+              </div>
+            </div>
+            <h1 className="similar-products-heading">Similar Products</h1>
+            <ul className="similar-products-list">
+              {similarProductsData.map(eachSimilarProduct => (
+                <SimilarProductItem
+                  productDetails={eachSimilarProduct}
+                  key={eachSimilarProduct.id}
+                />
+              ))}
+            </ul>
+          </div>
+        )
+      }}
+    </CartContext.Consumer>
+  )
+
+  renderProductDetails = () => {
+    const {apiStatus} = this.state
+
+    switch (apiStatus) {
+      case apiStatusConstants.success:
+        return this.renderProductDetailsView()
+      case apiStatusConstants.failure:
+        return this.renderFailureView()
+      case apiStatusConstants.inProgress:
+        return this.renderLoadingView()
+      default:
+        return null
+    }
+  }
+
+  render() {
+    return (
+      <>
+        <Header />
+        <div className="product-item-details-container">
+          {this.renderProductDetails()}
+        </div>
+      </>
+    )
+  }
 }
 
-const getCookie = name => {
-  const value = `; ${document.cookie}`
-  const parts = value.split(`; ${name}=`)
-  if (parts.length === 2) return parts.pop().split(';').shift()
-  return undefined
-}
 export default ProductItemDetails
